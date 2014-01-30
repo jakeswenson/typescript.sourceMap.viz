@@ -49,12 +49,72 @@ module SourceMapVisualizer {
 
     interface SourceSpan extends SourceSegment {
         length?: number;
+        containedSpans?: Set<number>;
+        isContainedInSpan?: boolean;
     }
 
     export var Segments: Segment[] = null;
     export var sources: SourceInfo = {};
 
     module Display {
+
+        export module Events {
+            export function register() {
+                $(document).on('segment.click', (evt, id) => {
+                    console.log('clicked', id);
+
+                    var map = $('#map' + id);
+                    var emit = $('#emit' + id);
+
+                    map.toggleClass('emitSpan emitSpanHover').css('background-color', (i, value) => {
+                        return Display.colors(id).toString();
+                    });
+
+                    emit.toggleClass('emitSpanHover');
+
+                })
+                .on('segment.hoverStart', (evt, id) => {
+                    Display.ToolTips.showToolTip(id);
+                    $('#map' + id).addClass('emitSpan emitSpanHover').css('background-color', Display.colors(id).toString());
+                    $('#emit' + id).addClass('emitSpanHover');
+                    $('#source' + id).addClass('emitSpanHover');
+                })
+                .on('segment.hoverEnd', (evt, id) => {
+                    Display.ToolTips.hideToolTip();
+                    $('#map' + id).removeClass('emitSpan emitSpanHover').css('background-color', '');
+                    $('#source' + id).removeClass('emitSpanHover');
+                    $('#emit' + id).removeClass('emitSpanHover');
+                });
+            }
+        }
+
+        export module ToolTips {
+            var showTip: number[] = [];
+            export function showToolTip(id: number) {
+                if (showTip !== undefined) {
+                    var item = showTip.pop();
+                    showTip.push(item, item);
+                    hideToolTip();
+                }
+
+                $('#map' + id).tooltip('show');
+                $('#source' + id).tooltip('show');
+                showTip.push(id);
+            }
+
+            export function hideToolTip() {
+                var id = showTip.pop();
+                $('#map' + id).tooltip('hide');
+                $('#source' + id).tooltip('hide');
+                if (showTip.length > 0) {
+                    id = _.last(showTip);
+                    $('#map' + id).tooltip('show');
+                    $('#source' + id).tooltip('show');
+
+                }
+            }
+        }
+
         export var colors = //d3.scale.category10();
             d3.scale.ordinal().range(['#aec7e8', '#ff7f0e', '#ff9896', '#f7b6d2', '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']);
 
@@ -66,7 +126,7 @@ module SourceMapVisualizer {
                 .text(segment.segment)
                 .click(() => {
                     $(document).triggerHandler('segment.click', segment.id);
-                }).tooltip({ trigger: 'hover focus click' });
+                }).tooltip({ trigger: 'manual' });
         }
 
         export function createSourceSpan(segment: SourceSpan, text: string) {
@@ -77,11 +137,15 @@ module SourceMapVisualizer {
                 .attr('id', 'source' + segment.id)
                 .addClass('emitSpan')
                 .css('background-color', color)
-                .hover(() => {
+                .hover(evt => {
+                    evt.stopPropagation();
+                    evt.preventDefault();
                     $(document).triggerHandler('segment.hoverStart', segment.id);
-                }, () => {
+                }, evt => {
+                    evt.stopPropagation();
+                    evt.preventDefault();
                     $(document).triggerHandler('segment.hoverEnd', segment.id);
-                }).tooltip({ trigger: 'hover focus click' });
+                }).tooltip({ trigger: 'manual' });
 
             return span;
         }
@@ -95,9 +159,13 @@ module SourceMapVisualizer {
                 span.attr('id', 'emit' + segment.id)
                     .addClass('emitSpan')
                     .css('background-color', color)
-                    .hover(() => {
+                    .hover(evt => {
+                        evt.stopPropagation();
+                        evt.preventDefault();
                         $(document).triggerHandler('segment.hoverStart', segment.id);
-                    }, () => {
+                    }, evt => {
+                        evt.stopPropagation();
+                        evt.preventDefault();
                         $(document).triggerHandler('segment.hoverEnd', segment.id);
                     });
             }
@@ -365,25 +433,68 @@ module SourceMapVisualizer {
             return s;
         });
 
-        var ss: SourceSpan[] = [];
+        var sourceSpans: SourceSpan[] = [];
 
         sourceSegs.reduce((prev: SourceSpan, cur) => {
             var line = prev.line + cur.line;
             var col = prev.column + cur.column;
             var item: SourceSpan = { id: cur.id, line: line, column: col };
-            ss.push(item);
+            sourceSpans.push(item);
             if (prev.line === line) {
                 prev.length = cur.column;
             }
             return item;
         }, <SourceSpan>{ id: 0, line: 0, column: 0 });
 
-        //console.log('done', ss.length);
-        ss.forEach(span => console.log('id', span.id, 'line', span.line, 'col', span.column, 'len', span.length));
+        sourceSpans.sort((a, b) => a.line - b.line || a.column - b.column);
 
+        var spanMap = new Map<number, SourceSpan>();
+
+        sourceSpans.forEach(span => {
+            spanMap.set(span.id, span);
+        });
+
+        function containsCurrentSpan(span: SourceSpan, otherSpan: SourceSpan) {
+            return otherSpan.containedSpans &&
+                otherSpan.containedSpans.has(span.id);
+        }
+
+        function endsBefore(span: SourceSpan, otherSpan: SourceSpan) {
+            if (span.length === undefined) {
+                return true;
+            }
+
+            return (otherSpan.column + otherSpan.length) <= (span.column + span.length);
+        }
+
+        _.forEach(sourceSpans, span => {
+            var containedSpans = _.filter(sourceSpans, otherSpan => {
+                var spanLength = span.length === undefined ? otherSpan.length : span.length;
+                return span.id !== otherSpan.id && !otherSpan.isContainedInSpan &&
+                    span.line === otherSpan.line &&
+                    span.column <= otherSpan.column &&
+                    endsBefore(span, otherSpan) &&
+                    !containsCurrentSpan(span, otherSpan);
+            });
+
+            if (containedSpans.length > 0) {
+                span.containedSpans = new Set();
+                containedSpans.forEach(containedSpan => {
+                    span.containedSpans.add(containedSpan.id);
+                    containedSpan.isContainedInSpan = true;
+                });
+            }
+        });
+
+        var rootSpans = sourceSpans.filter(s => {
+            return !s.isContainedInSpan;
+        });
+
+        //console.log('done', ss.length);
+        //sourceSpans.forEach(span => console.log('id', span.id, 'line', span.line, 'col', span.column, 'len', span.length));
         var spans = [];
         var lastLine = 0;
-        ss.sort((a, b) => a.line - b.line || a.column - b.column)
+        rootSpans
             .forEach(span => {
                 var line = span.line;
                 //console.log('line', line, 'col', span.column);
@@ -402,11 +513,65 @@ module SourceMapVisualizer {
                     spans.push(Display.simpleSpan(sourceFile.lineMap[line].substr(0, span.column)));
                 }
 
+                var text: string;
+
                 if (span.length === undefined) {
-                    spans.push(Display.createSourceSpan(span, sourceFile.lineMap[line].substr(span.column) + '\n'));
+                    text = sourceFile.lineMap[line].substr(span.column) + '\n';
                 }
                 else {
-                    spans.push(Display.createSourceSpan(span, sourceFile.lineMap[line].substr(span.column, span.length)));
+                    text = sourceFile.lineMap[line].substr(span.column, span.length);
+                }
+
+                var spanText: { span: SourceSpan; text: string }[] = [];
+
+                function breakText(parentSpan: SourceSpan, text: string, containedSpans: Set<number>) {
+                    var start = 0;
+                    containedSpans.forEach(id => {
+                        var span = spanMap.get(id);
+
+                        var offset = span.column - parentSpan.column;
+
+                        if (offset > start) {
+                            spanText.push({
+                                span: null,
+                                text: text.substr(start, offset)
+                            });
+                        }
+
+                        var subText = text.substr(offset, span.length);
+
+                        if (span.containedSpans) {
+                            breakText(span, subText, span.containedSpans);
+                        }
+                        else {
+                            spanText.push({
+                                span: span,
+                                text: subText
+                            });
+                        }
+
+                        start += (offset - start) + span.length;
+                    });
+
+                    if (start < text.length) {
+                        spanText.push({ span: null, text: text.substr(start) });
+                    }
+                }
+
+                if (span.containedSpans) {
+                    breakText(span, text, span.containedSpans);
+                    var result = Display.createSourceSpan(span, '').append(spanText.map(i => {
+                        if (i.span) {
+                            return Display.createSourceSpan(i.span, i.text);
+                        }
+                        else {
+                            return Display.simpleSpan(i.text);
+                        }
+                    }));
+                    spans.push(result);
+                }
+                else {
+                    spans.push(Display.createSourceSpan(span, text));
                 }
             });
 
@@ -420,27 +585,7 @@ module SourceMapVisualizer {
     }
 
     export function init() {
-
-        $(document).on('segment.click', (evt, id) => {
-            console.log('clicked', id);
-
-            var map = $('#map' + id);
-            var emit = $('#emit' + id);
-
-            map.toggleClass('emitSpan emitSpanHover').css('background-color', (i, value) => {
-                return Display.colors(id).toString();
-            });
-            emit.toggleClass('emitSpanHover');
-
-        }).on('segment.hoverStart', (evt, id) => {
-            $('#map' + id).addClass('emitSpan emitSpanHover').css('background-color', Display.colors(id).toString()).tooltip('show');
-            $('#emit' + id).addClass('emitSpanHover');
-            $('#source' + id).addClass('emitSpanHover').tooltip('show');
-        }).on('segment.hoverEnd', (evt, id) => {
-            $('#map' + id).removeClass('emitSpan emitSpanHover').css('background-color', '').tooltip('hide');
-            $('#source' + id).removeClass('emitSpanHover').tooltip('hide');
-            $('#emit' + id).removeClass('emitSpanHover');
-        });
+        Display.Events.register();
     }
 }
 

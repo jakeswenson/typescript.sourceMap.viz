@@ -1,4 +1,4 @@
-var SourceMapVisualizer;
+﻿var SourceMapVisualizer;
 (function (SourceMapVisualizer) {
     function decodeFully(value) {
         var result = [];
@@ -16,22 +16,84 @@ var SourceMapVisualizer;
 
     var Display;
     (function (Display) {
+        (function (Events) {
+            function register() {
+                $(document).on('segment.click', function (evt, id) {
+                    console.log('clicked', id);
+
+                    var map = $('#map' + id);
+                    var emit = $('#emit' + id);
+
+                    map.toggleClass('emitSpan emitSpanHover').css('background-color', function (i, value) {
+                        return Display.colors(id).toString();
+                    });
+
+                    emit.toggleClass('emitSpanHover');
+                }).on('segment.hoverStart', function (evt, id) {
+                    Display.ToolTips.showToolTip(id);
+                    $('#map' + id).addClass('emitSpan emitSpanHover').css('background-color', Display.colors(id).toString());
+                    $('#emit' + id).addClass('emitSpanHover');
+                    $('#source' + id).addClass('emitSpanHover');
+                }).on('segment.hoverEnd', function (evt, id) {
+                    Display.ToolTips.hideToolTip();
+                    $('#map' + id).removeClass('emitSpan emitSpanHover').css('background-color', '');
+                    $('#source' + id).removeClass('emitSpanHover');
+                    $('#emit' + id).removeClass('emitSpanHover');
+                });
+            }
+            Events.register = register;
+        })(Display.Events || (Display.Events = {}));
+        var Events = Display.Events;
+
+        (function (ToolTips) {
+            var showTip = [];
+            function showToolTip(id) {
+                if (showTip !== undefined) {
+                    var item = showTip.pop();
+                    showTip.push(item, item);
+                    hideToolTip();
+                }
+
+                $('#map' + id).tooltip('show');
+                $('#source' + id).tooltip('show');
+                showTip.push(id);
+            }
+            ToolTips.showToolTip = showToolTip;
+
+            function hideToolTip() {
+                var id = showTip.pop();
+                $('#map' + id).tooltip('hide');
+                $('#source' + id).tooltip('hide');
+                if (showTip.length > 0) {
+                    id = _.last(showTip);
+                    $('#map' + id).tooltip('show');
+                    $('#source' + id).tooltip('show');
+                }
+            }
+            ToolTips.hideToolTip = hideToolTip;
+        })(Display.ToolTips || (Display.ToolTips = {}));
+        var ToolTips = Display.ToolTips;
+
         Display.colors = d3.scale.ordinal().range(['#aec7e8', '#ff7f0e', '#ff9896', '#f7b6d2', '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']);
 
         function createMappingSpan(segment) {
             return $('<span>').attr('id', 'map' + segment.id).attr('title', JSON.stringify(segment.decoded)).text(segment.segment).click(function () {
                 $(document).triggerHandler('segment.click', segment.id);
-            }).tooltip({ trigger: 'hover focus click' });
+            }).tooltip({ trigger: 'manual' });
         }
         Display.createMappingSpan = createMappingSpan;
 
         function createSourceSpan(segment, text) {
             var color = Display.colors(segment.id).toString();
-            var span = $('<span>').text(text).attr('title', JSON.stringify({ line: segment.line, col: segment.column, len: segment.length })).attr('id', 'source' + segment.id).addClass('emitSpan').css('background-color', color).hover(function () {
+            var span = $('<span>').text(text).attr('title', JSON.stringify({ line: segment.line, col: segment.column, len: segment.length })).attr('id', 'source' + segment.id).addClass('emitSpan').css('background-color', color).hover(function (evt) {
+                evt.stopPropagation();
+                evt.preventDefault();
                 $(document).triggerHandler('segment.hoverStart', segment.id);
-            }, function () {
+            }, function (evt) {
+                evt.stopPropagation();
+                evt.preventDefault();
                 $(document).triggerHandler('segment.hoverEnd', segment.id);
-            }).tooltip({ trigger: 'hover focus click' });
+            }).tooltip({ trigger: 'manual' });
 
             return span;
         }
@@ -43,9 +105,13 @@ var SourceMapVisualizer;
 
             if (!segment.isRaw) {
                 var color = Display.colors(segment.id).toString();
-                span.attr('id', 'emit' + segment.id).addClass('emitSpan').css('background-color', color).hover(function () {
+                span.attr('id', 'emit' + segment.id).addClass('emitSpan').css('background-color', color).hover(function (evt) {
+                    evt.stopPropagation();
+                    evt.preventDefault();
                     $(document).triggerHandler('segment.hoverStart', segment.id);
-                }, function () {
+                }, function (evt) {
+                    evt.stopPropagation();
+                    evt.preventDefault();
                     $(document).triggerHandler('segment.hoverEnd', segment.id);
                 });
             }
@@ -328,29 +394,65 @@ var SourceMapVisualizer;
             return s;
         });
 
-        var ss = [];
+        var sourceSpans = [];
 
         sourceSegs.reduce(function (prev, cur) {
             var line = prev.line + cur.line;
             var col = prev.column + cur.column;
             var item = { id: cur.id, line: line, column: col };
-            ss.push(item);
+            sourceSpans.push(item);
             if (prev.line === line) {
                 prev.length = cur.column;
             }
             return item;
         }, { id: 0, line: 0, column: 0 });
 
-        //console.log('done', ss.length);
-        ss.forEach(function (span) {
-            return console.log('id', span.id, 'line', span.line, 'col', span.column, 'len', span.length);
+        sourceSpans.sort(function (a, b) {
+            return a.line - b.line || a.column - b.column;
         });
 
+        var spanMap = new Map();
+
+        sourceSpans.forEach(function (span) {
+            spanMap.set(span.id, span);
+        });
+
+        function containsCurrentSpan(span, otherSpan) {
+            return otherSpan.containedSpans && otherSpan.containedSpans.has(span.id);
+        }
+
+        function endsBefore(span, otherSpan) {
+            if (span.length === undefined) {
+                return true;
+            }
+
+            return (otherSpan.column + otherSpan.length) <= (span.column + span.length);
+        }
+
+        _.forEach(sourceSpans, function (span) {
+            var containedSpans = _.filter(sourceSpans, function (otherSpan) {
+                var spanLength = span.length === undefined ? otherSpan.length : span.length;
+                return span.id !== otherSpan.id && !otherSpan.isContainedInSpan && span.line === otherSpan.line && span.column <= otherSpan.column && endsBefore(span, otherSpan) && !containsCurrentSpan(span, otherSpan);
+            });
+
+            if (containedSpans.length > 0) {
+                span.containedSpans = new Set();
+                containedSpans.forEach(function (containedSpan) {
+                    span.containedSpans.add(containedSpan.id);
+                    containedSpan.isContainedInSpan = true;
+                });
+            }
+        });
+
+        var rootSpans = sourceSpans.filter(function (s) {
+            return !s.isContainedInSpan;
+        });
+
+        //console.log('done', ss.length);
+        //sourceSpans.forEach(span => console.log('id', span.id, 'line', span.line, 'col', span.column, 'len', span.length));
         var spans = [];
         var lastLine = 0;
-        ss.sort(function (a, b) {
-            return a.line - b.line || a.column - b.column;
-        }).forEach(function (span) {
+        rootSpans.forEach(function (span) {
             var line = span.line;
 
             //console.log('line', line, 'col', span.column);
@@ -369,10 +471,61 @@ var SourceMapVisualizer;
                 spans.push(Display.simpleSpan(sourceFile.lineMap[line].substr(0, span.column)));
             }
 
+            var text;
+
             if (span.length === undefined) {
-                spans.push(Display.createSourceSpan(span, sourceFile.lineMap[line].substr(span.column) + '\n'));
+                text = sourceFile.lineMap[line].substr(span.column) + '\n';
             } else {
-                spans.push(Display.createSourceSpan(span, sourceFile.lineMap[line].substr(span.column, span.length)));
+                text = sourceFile.lineMap[line].substr(span.column, span.length);
+            }
+
+            var spanText = [];
+
+            function breakText(parentSpan, text, containedSpans) {
+                var start = 0;
+                containedSpans.forEach(function (id) {
+                    var span = spanMap.get(id);
+
+                    var offset = span.column - parentSpan.column;
+
+                    if (offset > start) {
+                        spanText.push({
+                            span: null,
+                            text: text.substr(start, offset)
+                        });
+                    }
+
+                    var subText = text.substr(offset, span.length);
+
+                    if (span.containedSpans) {
+                        breakText(span, subText, span.containedSpans);
+                    } else {
+                        spanText.push({
+                            span: span,
+                            text: subText
+                        });
+                    }
+
+                    start += (offset - start) + span.length;
+                });
+
+                if (start < text.length) {
+                    spanText.push({ span: null, text: text.substr(start) });
+                }
+            }
+
+            if (span.containedSpans) {
+                breakText(span, text, span.containedSpans);
+                var result = Display.createSourceSpan(span, '').append(spanText.map(function (i) {
+                    if (i.span) {
+                        return Display.createSourceSpan(i.span, i.text);
+                    } else {
+                        return Display.simpleSpan(i.text);
+                    }
+                }));
+                spans.push(result);
+            } else {
+                spans.push(Display.createSourceSpan(span, text));
             }
         });
 
@@ -387,25 +540,7 @@ var SourceMapVisualizer;
     SourceMapVisualizer.refresh = refresh;
 
     function init() {
-        $(document).on('segment.click', function (evt, id) {
-            console.log('clicked', id);
-
-            var map = $('#map' + id);
-            var emit = $('#emit' + id);
-
-            map.toggleClass('emitSpan emitSpanHover').css('background-color', function (i, value) {
-                return Display.colors(id).toString();
-            });
-            emit.toggleClass('emitSpanHover');
-        }).on('segment.hoverStart', function (evt, id) {
-            $('#map' + id).addClass('emitSpan emitSpanHover').css('background-color', Display.colors(id).toString()).tooltip('show');
-            $('#emit' + id).addClass('emitSpanHover');
-            $('#source' + id).addClass('emitSpanHover').tooltip('show');
-        }).on('segment.hoverEnd', function (evt, id) {
-            $('#map' + id).removeClass('emitSpan emitSpanHover').css('background-color', '').tooltip('hide');
-            $('#source' + id).removeClass('emitSpanHover').tooltip('hide');
-            $('#emit' + id).removeClass('emitSpanHover');
-        });
+        Display.Events.register();
     }
     SourceMapVisualizer.init = init;
 })(SourceMapVisualizer || (SourceMapVisualizer = {}));
