@@ -44,14 +44,12 @@
   </ItemGroup>
   <ItemGroup>
     <TypeScriptCompile Include="app.ts" />
-    <TypeScriptCompile Include="D:\XTeamUpdate\src\typescript\public\built\local\typescript.d.ts">
-      <Link>typescript.d.ts</Link>
-    </TypeScriptCompile>
     <TypeScriptCompile Include="Scripts\typings\bootstrap\bootstrap.d.ts" />
     <TypeScriptCompile Include="Scripts\typings\d3\d3.d.ts" />
     <TypeScriptCompile Include="Scripts\typings\d3\plugins\d3.superformula.d.ts" />
     <TypeScriptCompile Include="Scripts\typings\jquery\jquery.d.ts" />
     <TypeScriptCompile Include="Scripts\typings\underscore\underscore.d.ts" />
+    <TypeScriptCompile Include="typescript.d.ts" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Scripts\underscore.min.map" />
