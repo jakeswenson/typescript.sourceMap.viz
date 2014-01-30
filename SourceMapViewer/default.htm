@@ -1,0 +1,107 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Source Map Vis</title>
+    <link href="Content/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="app.css" type="text/css" />
+    <style>
+        
+        @media (min-width: 1460px) {
+            .container {
+                width: 1400px;
+            }
+        }
+        
+        @media (min-width: 1660px) {
+            .container {
+                width: 1600px;
+            }
+        }
+        
+        @media (min-width: 1860px) {
+            .container {
+                width: 1800px;
+            }
+        }
+
+        @media (min-width: 1960px) {
+            .container {
+                width: 1900px;
+            }
+        }
+        
+        .document {
+            line-height: 2;
+        }
+
+        .fileDragPoint {
+            font-size: 32pt;
+            color: grey;
+            border: 1px dotted black;
+            border-radius: 5px;
+            margin-bottom: 25px;
+        }
+
+        .emitSpan {
+            padding: 3px 3px;
+            border-radius: 3px;
+            line-height: 2;
+        }
+            .emitSpanHover, .emitSpan:hover {
+                font-weight: bold;
+                padding: 5px 5px;
+                font-size: 1.1em;
+                /*line-height: 2.5;*/
+            }
+    </style>
+</head>
+<body data-target="sourceMap">
+    <div class="container">
+        <h1>Source Map Vis</h1>
+
+        <div class="row">
+            <h2>Source Map</h2>
+            <div class="col-lg-12 fileDragPoint" data-next="emitted" data-target="sourceMap">Drag a source map file here</div>
+            <pre id="sourceMap" class="col-lg-12 document"></pre>
+        </div>
+        <div class="row">
+            <div class="col-lg-6 hidden" id="emitted">
+                <h2>Emitted Source</h2>
+                <div class="col-lg-12 fileDragPoint" data-next="sourceCode" data-target="emittedSource">Drag the emitted file here</div>
+                <ul class="nav nav-tabs">
+                    <li class="active"><a href="#emittedSourceViewTab" data-toggle="tab">View</a></li>
+                    <li><a href="#emittedSourceRawTab" data-toggle="tab">Raw</a></li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane active" id="emittedSourceViewTab">
+                        <pre id="emittedSource" class="col-lg-12 document"></pre>
+                    </div>
+                    <div class="tab-pane" id="emittedSourceRawTab">
+                        <pre id="emittedSourceRaw" class="col-lg-12 document"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 hidden" id="sourceCode">
+                <h2>Source</h2>
+                <div class="col-lg-12 fileDragPoint" data-target="source">Drag the source file here</div>
+                <ul class="nav nav-tabs">
+                    <li class="active"><a href="#source0" data-toggle="tab">Source</a></li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane active" id="source0">
+                        <pre id="source" class="col-lg-12 document"></pre>
+                        <pre id="sourceRaw" class="col-lg-12 document"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="Scripts/jquery-2.1.0.min.js"></script>
+    <script src="Scripts/bootstrap.min.js"></script>
+    <script src="typescript.js"></script>
+    <script src="Scripts/underscore.min.js"></script>
+    <script src="Scripts/d3.v3.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
